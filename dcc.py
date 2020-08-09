@@ -67,7 +67,7 @@ class ApkTool(object):
     @staticmethod
     def decompile(apk):
         outdir = make_temp_dir('dcc-apktool-')
-        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '-f', '-o', outdir, apk])
+        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', outdir, apk])
         return outdir
 
     @staticmethod
@@ -405,6 +405,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
         decompiled_dir = ApkTool.decompile(apkfile)
         native_compiled_dexes(decompiled_dir, compiled_methods)
         copy_compiled_libs(project_dir, decompiled_dir)
+        input("-------> do some manually modificatios? " + decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
 
@@ -454,5 +455,6 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error("Compile %s failed!" % infile, exc_info=True)
     finally:
-        clean_temp_files()
+        pass
+        # clean_temp_files()
 
