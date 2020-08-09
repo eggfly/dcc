@@ -66,7 +66,7 @@ class ApkTool(object):
     @staticmethod
     def decompile(apk):
         outdir = make_temp_dir('dcc-apktool-')
-        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '-f', '-o', outdir, apk])
+        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', outdir, apk])
         return outdir
 
     @staticmethod
@@ -269,7 +269,7 @@ def native_class_methods(smali_path, compiled_methods):
             s = line.strip()
             if s == '.end method':
                 break
-            elif s.startswith('.annotation') and s.find('Dex2C') < 0:
+            elif line.startswith('    .annotation') and s.find('Dex2C') < 0:
                 code_lines.append(line)
                 handle_annotanion()
             else:
@@ -415,6 +415,8 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
         decompiled_dir = ApkTool.decompile(apkfile)
         native_compiled_dexes(decompiled_dir, compiled_methods)
         copy_compiled_libs(project_dir, decompiled_dir)
+        # eggfly modified
+        input("manually do some modify? " + decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
 
@@ -464,5 +466,6 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error("Compile %s failed!" % infile, exc_info=True)
     finally:
-        clean_temp_files()
+        pass
+        # clean_temp_files()
 
