@@ -9,8 +9,8 @@
 .*;onCreate\(Landroid/os/Bundle;.*
 
 # compile all method, use to test compiler
-.*
+#.*
 
 # smarthome
-# .*com.*
+.*com/xiaomi/smarthome.*
 
