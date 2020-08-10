@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import json
+import datetime
 
 from androguard.core import androconf
 from androguard.core.analysis import analysis
@@ -17,6 +18,8 @@ from androguard.core.bytecodes import apk, dvm
 from androguard.util import read
 from dex2c.compiler import Dex2C
 from dex2c.util import JniLongName, get_method_triple, get_access_method, is_synthetic_method, is_native_method
+
+time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
 APKTOOL = 'tools/apktool.jar'
 SIGNJAR = 'tools/signapk.jar'
@@ -66,7 +69,7 @@ def clean_temp_files():
 class ApkTool(object):
     @staticmethod
     def decompile(apk):
-        outdir = make_temp_dir('dcc-apktool-')
+        outdir = make_temp_dir('dcc-apktool-'+time_str+'-')
         subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', outdir, apk])
         return outdir
 
@@ -391,7 +394,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
             shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
     else:
-        project_dir = make_temp_dir('dcc-project-')
+        project_dir = make_temp_dir('dcc-project-'+time_str+'-')
         shutil.rmtree(project_dir)
         shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
@@ -405,7 +408,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
         decompiled_dir = ApkTool.decompile(apkfile)
         native_compiled_dexes(decompiled_dir, compiled_methods)
         copy_compiled_libs(project_dir, decompiled_dir)
-        input("-------> do some manually modificatios? " + decompiled_dir)
+        input("-------> do some manually modification? " + decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
 
@@ -421,7 +424,7 @@ if __name__ == '__main__':
     parser.add_argument('--filter', default='filter.txt', help='Method filter configure file')
     parser.add_argument('--no-build', action='store_true', default=False, help='Do not build the compiled code')
     parser.add_argument('--source-dir', help='The compiled cpp code output directory.')
-    parser.add_argument('--project-archive', default='project-source.zip', help='Archive the project directory')
+    parser.add_argument('--project-archive', default='project-source-'+time_str+'.zip', help='Archive the project directory')
 
     args = vars(parser.parse_args())
     infile = args['infile']
