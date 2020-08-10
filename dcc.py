@@ -17,7 +17,8 @@ from androguard.core.androconf import show_logging
 from androguard.core.bytecodes import apk, dvm
 from androguard.util import read
 from dex2c.compiler import Dex2C
-from dex2c.util import JniLongName, get_method_triple, get_access_method, is_synthetic_method, is_native_method
+from dex2c.util import MangleForJni, JniLongName, get_method_triple, get_access_method, is_synthetic_method, \
+    is_native_method
 
 time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
@@ -31,14 +32,17 @@ logger = logging.getLogger('dcc')
 
 tempfiles = []
 
+
 def is_windows():
     return os.name == 'nt'
+
 
 def cpu_count():
     num_processes = os.cpu_count()
     if num_processes is None:
         num_processes = 2
     return num_processes
+
 
 def make_temp_dir(prefix='dcc'):
     global tempfiles
@@ -69,7 +73,7 @@ def clean_temp_files():
 class ApkTool(object):
     @staticmethod
     def decompile(apk):
-        outdir = make_temp_dir('dcc-apktool-'+time_str+'-')
+        outdir = make_temp_dir('dcc-apktool-' + time_str + '-')
         subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', outdir, apk])
         return outdir
 
@@ -302,19 +306,33 @@ def native_compiled_dexes(decompiled_dir, compiled_methods):
 
 
 def write_compiled_methods(project_dir, compiled_methods):
+    print("start write cpp --> " + project_dir)
+    class_to_methods_dict = {}
     source_dir = os.path.join(project_dir, 'jni', 'nc')
     if not os.path.exists(source_dir):
         os.makedirs(source_dir)
-
     for method_triple, code in compiled_methods.items():
+        cls_name, method_name, signature = method_triple
+        print(cls_name, method_name, signature)
+        assert cls_name[0] == 'L'
+        assert cls_name[-1] == ';'
+        cls_name = cls_name[1:-1]
+        mangled_cls_name = MangleForJni(cls_name)
+        if mangled_cls_name not in class_to_methods_dict:
+            class_to_methods_dict[mangled_cls_name] = {}
         full_name = JniLongName(*method_triple)
-        filepath = os.path.join(source_dir, full_name) + '.cpp'
-        if os.path.exists(filepath):
-            logger.warning("Overwrite file %s %s" % (filepath, method_triple))
-
-        with open(filepath, 'w') as fp:
-            fp.write('#include "Dex2C.h"\n' + code)
-
+        class_to_methods_dict[mangled_cls_name][full_name] = code
+    for mangled_cls_name, code_dict in class_to_methods_dict.items():
+        file_path = os.path.join(source_dir, mangled_cls_name) + '.cpp'
+        if os.path.exists(file_path):
+            logger.warning("Overwrite file %s %s" % (file_path, method_triple))
+        with open(file_path, 'w') as fp:
+            fp.write('#include "Dex2C.h"\n\n\n')
+            for full_name, code in code_dict.items():
+                fp.write("\n\n\n")
+                fp.write(code)
+                fp.write("\n\n\n")
+    print("write all cpp done! --> " + source_dir)
     with open(os.path.join(source_dir, 'compiled_methods.txt'), 'w') as fp:
         fp.write('\n'.join(list(map(''.join, compiled_methods.keys()))))
 
@@ -357,6 +375,7 @@ def compile_dex(vm, filtercfg):
 
     return compiled_method_code, errors
 
+
 def compile_all_dex(apkfile, filtercfg):
     vms = auto_vms(apkfile)
 
@@ -370,8 +389,10 @@ def compile_all_dex(apkfile, filtercfg):
 
     return compiled_method_code, compile_error_msg
 
+
 def is_apk(name):
     return name.endswith('.apk')
+
 
 def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
     if not os.path.exists(apkfile):
@@ -394,7 +415,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
             shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
     else:
-        project_dir = make_temp_dir('dcc-project-'+time_str+'-')
+        project_dir = make_temp_dir('dcc-project-' + time_str + '-')
         shutil.rmtree(project_dir)
         shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
@@ -424,7 +445,8 @@ if __name__ == '__main__':
     parser.add_argument('--filter', default='filter.txt', help='Method filter configure file')
     parser.add_argument('--no-build', action='store_true', default=False, help='Do not build the compiled code')
     parser.add_argument('--source-dir', help='The compiled cpp code output directory.')
-    parser.add_argument('--project-archive', default='project-source-'+time_str+'.zip', help='Archive the project directory')
+    parser.add_argument('--project-archive', default='project-source-' + time_str + '.zip',
+                        help='Archive the project directory')
 
     args = vars(parser.parse_args())
     infile = args['infile']
@@ -460,4 +482,3 @@ if __name__ == '__main__':
     finally:
         pass
         # clean_temp_files()
-
