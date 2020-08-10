@@ -313,7 +313,7 @@ def write_compiled_methods(project_dir, compiled_methods):
         os.makedirs(source_dir)
     for method_triple, code in compiled_methods.items():
         cls_name, method_name, signature = method_triple
-        print(cls_name, method_name, signature)
+        # print(cls_name, method_name, signature)
         assert cls_name[0] == 'L'
         assert cls_name[-1] == ';'
         cls_name = cls_name[1:-1]
