@@ -11,6 +11,7 @@ import tempfile
 import json
 import datetime
 
+from pyaxmlparser import APK
 from androguard.core import androconf
 from androguard.core.analysis import analysis
 from androguard.core.androconf import show_logging
@@ -260,7 +261,7 @@ def native_class_methods(smali_path, compiled_methods):
     def next_line():
         return fp.readline()
 
-    def handle_annotanion():
+    def handle_annotation():
         while True:
             line = next_line()
             if not line:
@@ -282,7 +283,7 @@ def native_class_methods(smali_path, compiled_methods):
                 break
             elif line.startswith('    .annotation') and s.find('Dex2C') < 0:
                 code_lines.append(line)
-                handle_annotanion()
+                handle_annotation()
             else:
                 continue
 
@@ -344,19 +345,24 @@ def write_compiled_methods(project_dir, compiled_methods):
         else:
             mangled_package_name = "__default_package_name__"
         if mangled_package_name not in class_to_methods_dict:
-            class_to_methods_dict[mangled_package_name] = {}
-        full_name = JniLongName(*method_triple)
-        class_to_methods_dict[mangled_package_name][full_name] = code
-    for mangled_package_name, code_dict in class_to_methods_dict.items():
-        file_path = os.path.join(source_dir, mangled_package_name) + '.cpp'
-        if os.path.exists(file_path):
-            logger.warning("Overwrite file %s %s" % (file_path, method_triple))
-        with open(file_path, 'w') as fp:
-            fp.write('#include "Dex2C.h"\n\n\n')
-            for full_name, code in code_dict.items():
-                fp.write("\n\n\n")
-                fp.write(code)
-                fp.write("\n\n\n")
+            # one package name, multiple groups of codes
+            class_to_methods_dict[mangled_package_name] = [[]]
+        # full_name = JniLongName(*method_triple)
+        if len(class_to_methods_dict[mangled_package_name][-1]) > 1000:
+            # split to multiple files
+            class_to_methods_dict[mangled_package_name].append([])
+        class_to_methods_dict[mangled_package_name][-1].append(code)
+    for file_name, code_groups in class_to_methods_dict.items():
+        for idx, codes in enumerate(code_groups):
+            file_path = os.path.join(source_dir, file_name + "_" + str(idx)) + '.cpp'
+            if os.path.exists(file_path):
+                logger.warning("Overwrite file %s" % file_path)
+            with open(file_path, 'w') as fp:
+                fp.write('#include "Dex2C.h"\n\n\n')
+                for code in codes:
+                    fp.write("\n\n\n")
+                    fp.write(code)
+                    fp.write("\n\n\n")
     logger.info("write all cpp done! --> " + source_dir)
     with open(os.path.join(source_dir, 'compiled_methods.txt'), 'w') as fp:
         fp.write('\n'.join(list(map(''.join, compiled_methods.keys()))))
@@ -419,13 +425,13 @@ def is_apk(name):
     return name.endswith('.apk')
 
 
-def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
-    if not os.path.exists(apkfile):
-        logger.error("file %s is not exists", apkfile)
+def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
+    if not os.path.exists(apk_file):
+        logger.error("file %s is not exists", apk_file)
         return
 
     logger.info("--> compile_all_dex")
-    compiled_methods, errors = compile_all_dex(apkfile, filtercfg)
+    compiled_methods, errors = compile_all_dex(apk_file, filtercfg)
 
     if errors:
         logger.warning('================================')
@@ -451,12 +457,62 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
     if do_compile:
         build_project(project_dir)
 
-    if is_apk(apkfile) and outapk:
-        decompiled_dir = ApkTool.decompile(apkfile)
+    if is_apk(apk_file) and outapk:
+        decompiled_dir = ApkTool.decompile(apk_file)
         native_compiled_dexes(decompiled_dir, compiled_methods)
+        logging.info("copy_compiled_libs to " + decompiled_dir)
         copy_compiled_libs(project_dir, decompiled_dir)
         # eggfly modified
-        input("-------> do some manually modification? " + decompiled_dir)
+        parse_apk = APK(apk_file)
+        app_cls_name = parse_apk.get_attribute_value("application", "name")
+        if app_cls_name is None:
+            # TODO: need insert a new app class into AndroidManifest.xml
+            raise NotImplementedError
+        app_cls_class_parts = app_cls_name.split(".")
+        app_smali_file = os.path.join(decompiled_dir, "smali", *app_cls_class_parts) + ".smali"
+        if not os.path.isfile(app_smali_file):
+            logger.warning(app_smali_file + " is not a file")
+        else:
+            logging.info("try to modify smali code for app class: " + app_smali_file)
+            modified_smali_lines = []
+            clinit_start = clinit_locals_start = nc_init_inserted = False
+            with open(app_smali_file) as fp:
+                while True:
+                    line = fp.readline()
+                    if not line:
+                        break
+                    modified_smali_lines.append(line)
+                    line = line.strip()
+                    if line.startswith(".method") and line.endswith("<clinit>()V"):
+                        logger.info("found smali line: " + line)
+                        clinit_start = True
+                    if clinit_start and line.startswith(".locals"):
+                        clinit_locals_start = True
+                    if clinit_start and clinit_locals_start:
+                        logger.info("found and insert invoke code to the <clinit> function")
+                        modified_smali_lines.append("\n    invoke-static {}, Lkvm/NcInit;->setup()V\n")
+                        clinit_start = clinit_locals_start = False
+                        nc_init_inserted = True
+            if not nc_init_inserted:
+                logger.info("<clinit> not found, add a new <clinit> function at tail")
+                modified_smali_lines.append("""
+.method static constructor <clinit>()V
+    .locals 0
+    
+    invoke-static {}, Lkvm/NcInit;->setup()V
+
+    return-void
+.end method
+""")
+            # write lines
+            with open(app_smali_file, "w") as fp:
+                fp.writelines(modified_smali_lines)
+            smali_kvm_dir = os.path.join(decompiled_dir, "smali", "kvm")
+            if not os.path.exists(smali_kvm_dir):
+                shutil.copytree("kvm", smali_kvm_dir)
+            else:
+                logger.warning("kvm already exist??")
+            logger.info("smali initialize code modifications complete!")
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
 
