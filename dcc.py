@@ -430,6 +430,27 @@ def is_apk(name):
     return name.endswith('.apk')
 
 
+def get_super_cls_name_from_smali(decompiled_dir, cls_name):
+    cls_class_parts = cls_name.split(".")
+    smali_file = os.path.join(decompiled_dir, "smali", *cls_class_parts) + ".smali"
+    if not os.path.isfile(smali_file):
+        logger.warning(smali_file + " is not a file")
+        return None
+    with open(smali_file) as fp:
+        while True:
+            line = fp.readline()
+            if not line:
+                break
+            line = line.strip()
+            if line.startswith(".super"):
+                super_cls_l_name = line.split(" ")[-1]
+                assert super_cls_l_name[0] == 'L'
+                assert super_cls_l_name[-1] == ';'
+                super_cls_name = super_cls_l_name[1:-1].replace("/", ".")
+                return super_cls_name
+    return None
+
+
 def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
     if not os.path.exists(apk_file):
         logger.error("file %s is not exists", apk_file)
@@ -467,51 +488,22 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         native_compiled_dexes(decompiled_dir, compiled_methods)
         logging.info("copy_compiled_libs to " + decompiled_dir)
         copy_compiled_libs(project_dir, decompiled_dir)
-        # eggfly modified
+        # modified
         parse_apk = APK(apk_file)
-        app_cls_name = parse_apk.get_attribute_value("application", "name")
-        if app_cls_name is None:
+        current_app_cls_name = parse_apk.get_attribute_value("application", "name")
+        if current_app_cls_name is None:
             # TODO: need insert a new app class into AndroidManifest.xml
             raise NotImplementedError
-        app_cls_class_parts = app_cls_name.split(".")
-        app_smali_file = os.path.join(decompiled_dir, "smali", *app_cls_class_parts) + ".smali"
-        if not os.path.isfile(app_smali_file):
-            logger.warning(app_smali_file + " is not a file")
+        while True:
+            super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
+            logging.info("get super class: %s" % super_app_cls_name)
+            if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
+                break
+            current_app_cls_name = super_app_cls_name
+        if current_app_cls_name is None:
+            logger.warning("current_app_cls_name is None")
         else:
-            logging.info("try to modify smali code for app class: " + app_smali_file)
-            modified_smali_lines = []
-            clinit_start = clinit_locals_start = nc_init_inserted = False
-            with open(app_smali_file) as fp:
-                while True:
-                    line = fp.readline()
-                    if not line:
-                        break
-                    modified_smali_lines.append(line)
-                    line = line.strip()
-                    if line.startswith(".method") and line.endswith("<clinit>()V"):
-                        logger.info("found smali line: " + line)
-                        clinit_start = True
-                    if clinit_start and line.startswith(".locals"):
-                        clinit_locals_start = True
-                    if clinit_start and clinit_locals_start:
-                        logger.info("found and insert invoke code to the <clinit> function")
-                        modified_smali_lines.append("\n    invoke-static {}, Lkvm/NcInit;->setup()V\n")
-                        clinit_start = clinit_locals_start = False
-                        nc_init_inserted = True
-            if not nc_init_inserted:
-                logger.info("<clinit> not found, add a new <clinit> function at tail")
-                modified_smali_lines.append("""
-.method static constructor <clinit>()V
-    .locals 0
-    
-    invoke-static {}, Lkvm/NcInit;->setup()V
-
-    return-void
-.end method
-""")
-            # write lines
-            with open(app_smali_file, "w") as fp:
-                fp.writelines(modified_smali_lines)
+            insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
             smali_kvm_dir = os.path.join(decompiled_dir, "smali", "kvm")
             if not os.path.exists(smali_kvm_dir):
                 shutil.copytree("kvm", smali_kvm_dir)
@@ -520,6 +512,46 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
             logger.info("smali initialize code modifications complete!")
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
+
+
+def insert_init_code_to_smali(current_app_cls_name, decompiled_dir):
+    most_super_class_parts = current_app_cls_name.split(".")
+    smali_file = os.path.join(decompiled_dir, "smali", *most_super_class_parts) + ".smali"
+    assert os.path.isfile(smali_file)
+    logging.info("try to modify smali code for most super app class: " + smali_file)
+    modified_smali_lines = []
+    clinit_start = clinit_locals_start = nc_init_inserted = False
+    with open(smali_file) as fp:
+        while True:
+            line = fp.readline()
+            if not line:
+                break
+            modified_smali_lines.append(line)
+            line = line.strip()
+            if line.startswith(".method") and line.endswith("<clinit>()V"):
+                logger.info("found smali line: " + line)
+                clinit_start = True
+            if clinit_start and line.startswith(".locals"):
+                clinit_locals_start = True
+            if clinit_start and clinit_locals_start:
+                logger.info("found and insert invoke code to the <clinit> function")
+                modified_smali_lines.append("\n    invoke-static {}, Lkvm/NcInit;->setup()V\n")
+                clinit_start = clinit_locals_start = False
+                nc_init_inserted = True
+    if not nc_init_inserted:
+        logger.info("<clinit> not found, add a new <clinit> function at tail")
+        modified_smali_lines.append("""
+.method static constructor <clinit>()V
+    .locals 0
+    
+    invoke-static {}, Lkvm/NcInit;->setup()V
+
+    return-void
+.end method
+""")
+    # write lines
+    with open(smali_file, "w") as fp:
+        fp.writelines(modified_smali_lines)
 
 
 sys.setrecursionlimit(5000)
