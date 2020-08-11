@@ -4,6 +4,9 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := nc
 LOCAL_LDLIBS    := -llog
 
+LOCAL_LDFLAGS   := --long-plt
+
+
 SOURCES := $(wildcard $(LOCAL_PATH)/nc/*.cpp)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/nc
 

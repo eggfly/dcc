@@ -421,6 +421,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
         logger.error("file %s is not exists", apkfile)
         return
 
+    print("--> compile_all_dex")
     compiled_methods, errors = compile_all_dex(apkfile, filtercfg)
 
     if errors:
