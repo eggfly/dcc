@@ -339,7 +339,7 @@ def write_compiled_methods(project_dir, compiled_methods):
         assert cls_name[-1] == ';'
         cls_name = cls_name[1:-1]
         package_name = "/".join(cls_name.split("/")[:-1])
-        if package_name is not "":
+        if package_name != "":
             mangled_package_name = MangleForJni(package_name)
         else:
             mangled_package_name = "__default_package_name__"
