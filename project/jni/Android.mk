@@ -4,7 +4,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := nc
 LOCAL_LDLIBS    := -llog
 
-LOCAL_LDFLAGS   := --long-plt
+LOCAL_LDFLAGS   := -Wl,--long-plt
 
 
 SOURCES := $(wildcard $(LOCAL_PATH)/nc/*.cpp)

@@ -328,24 +328,27 @@ def native_compiled_dexes(decompiled_dir, compiled_methods):
 
 
 def write_compiled_methods(project_dir, compiled_methods):
-    print("start write cpp --> " + project_dir)
+    logger.info("start write cpp --> " + project_dir)
     class_to_methods_dict = {}
     source_dir = os.path.join(project_dir, 'jni', 'nc')
     if not os.path.exists(source_dir):
         os.makedirs(source_dir)
     for method_triple, code in compiled_methods.items():
         cls_name, method_name, signature = method_triple
-        # print(cls_name, method_name, signature)
         assert cls_name[0] == 'L'
         assert cls_name[-1] == ';'
         cls_name = cls_name[1:-1]
-        mangled_cls_name = MangleForJni(cls_name)
-        if mangled_cls_name not in class_to_methods_dict:
-            class_to_methods_dict[mangled_cls_name] = {}
+        package_name = "/".join(cls_name.split("/")[:-1])
+        if package_name is not "":
+            mangled_package_name = MangleForJni(package_name)
+        else:
+            mangled_package_name = "__default_package_name__"
+        if mangled_package_name not in class_to_methods_dict:
+            class_to_methods_dict[mangled_package_name] = {}
         full_name = JniLongName(*method_triple)
-        class_to_methods_dict[mangled_cls_name][full_name] = code
-    for mangled_cls_name, code_dict in class_to_methods_dict.items():
-        file_path = os.path.join(source_dir, mangled_cls_name) + '.cpp'
+        class_to_methods_dict[mangled_package_name][full_name] = code
+    for mangled_package_name, code_dict in class_to_methods_dict.items():
+        file_path = os.path.join(source_dir, mangled_package_name) + '.cpp'
         if os.path.exists(file_path):
             logger.warning("Overwrite file %s %s" % (file_path, method_triple))
         with open(file_path, 'w') as fp:
@@ -354,7 +357,7 @@ def write_compiled_methods(project_dir, compiled_methods):
                 fp.write("\n\n\n")
                 fp.write(code)
                 fp.write("\n\n\n")
-    print("write all cpp done! --> " + source_dir)
+    logger.info("write all cpp done! --> " + source_dir)
     with open(os.path.join(source_dir, 'compiled_methods.txt'), 'w') as fp:
         fp.write('\n'.join(list(map(''.join, compiled_methods.keys()))))
 
@@ -365,9 +368,9 @@ def archive_compiled_code(project_dir):
     return outfile
 
 
-def compile_dex(vm, filtercfg):
+def compile_dex(vm, filter_cfg):
     vmx = analysis.Analysis(vm)
-    method_filter = MethodFilter(filtercfg, vm)
+    method_filter = MethodFilter(filter_cfg, vm)
     compiler = Dex2C(vm, vmx)
 
     compiled_method_code = {}
@@ -399,12 +402,12 @@ def compile_dex(vm, filtercfg):
 
 
 def compile_all_dex(apkfile, filtercfg):
+    logger.info("--> start reading all dex from " + apkfile)
     vms = auto_vms(apkfile)
-
     compiled_method_code = {}
     compile_error_msg = []
-
     for vm in vms:
+        logger.info("--> start compile_dex: " + str(vm))
         codes, errors = compile_dex(vm, filtercfg)
         compiled_method_code.update(codes)
         compile_error_msg.extend(errors)
@@ -421,7 +424,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
         logger.error("file %s is not exists", apkfile)
         return
 
-    print("--> compile_all_dex")
+    logger.info("--> compile_all_dex")
     compiled_methods, errors = compile_all_dex(apkfile, filtercfg)
 
     if errors:
@@ -506,4 +509,3 @@ if __name__ == '__main__':
     finally:
         pass
         # clean_temp_files()
-    
