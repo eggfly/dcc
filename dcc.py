@@ -211,6 +211,10 @@ class MethodFilter(object):
         method_triple = get_method_triple(method)
         cls_name, name, _ = method_triple
 
+        if name == "<clinit>" or name == "<init>":
+            # do not compile constructor
+            return False
+
         # Android VM may find the wrong method using short jni name
         # don't compile function if there is a same named native method
         if (cls_name, name) in self.native_methods:
@@ -219,6 +223,7 @@ class MethodFilter(object):
         full_name = ''.join(method_triple)
         for rule in self._keep_filters:
             if rule.search(full_name):
+                logging.info("filter rule " + str(rule) + " matched: " + full_name)
                 return False
 
         if full_name in self._compile_full_match:

@@ -1,5 +1,10 @@
+
 # do not compile constructor
-!<clinit|init>
+# no need any more
+# !<clinit|init>
+
+# a method full name may be like this:
+# Landroid/arch/core/internal/SafeIterableMap$Entry;getKey()Ljava/lang/Object;
 
 # test demo
 !bigGoto
@@ -8,9 +13,19 @@
 # compile method named onCreate, mostly activity's onCreate
 .*;onCreate\(Landroid/os/Bundle;.*
 
+# ignore attachBaseContext
+# !attachBaseContext
+
+!com/google
+!com/facebook
+!org/apache/commons
+
+!^Landroid/
+!^Landroidx/
+!^Lkotlin/
+!^Lkotlinx/
+!^Ljavax/
+
 # compile all method, use to test compiler
 .*
-
-# smarthome
-# .*com.*
 
