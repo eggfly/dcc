@@ -16,15 +16,38 @@
 # ignore attachBaseContext
 # !attachBaseContext
 
-!com/google
-!com/facebook
-!org/apache/commons
+!^Lcom/google/
+!^Lcom/facebook/
+!^Lorg/apache/
 
 !^Landroid/
 !^Landroidx/
 !^Lkotlin/
 !^Lkotlinx/
 !^Ljavax/
+
+
+!^Lbutterknife/
+!^Lio/flutter/
+!^Lio/reactive
+!^Lio/realm/
+!^Lrx/
+!^Ltv/danmaku/
+
+
+okhttp3
+okhttp
+okio
+retrofit
+retrofit2
+
+# bugly, qq sdk, wechat sdk
+!^Lcom/tencent/
+
+!^_m_j
+
+!PassportUIInitProvider
+!PassportUI
 
 # compile all method, use to test compiler
 .*

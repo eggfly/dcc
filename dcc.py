@@ -223,7 +223,7 @@ class MethodFilter(object):
         full_name = ''.join(method_triple)
         for rule in self._keep_filters:
             if rule.search(full_name):
-                logging.info("filter rule " + str(rule) + " matched: " + full_name)
+                # logging.info("filter rule " + str(rule) + " matched: " + full_name)
                 return False
 
         if full_name in self._compile_full_match:
