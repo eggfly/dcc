@@ -1,0 +1,24 @@
+# do not compile constructor
+!<clinit|init>
+
+# test demo
+!bigGoto
+.*TestCompiler.*
+
+# compile method named onCreate, mostly activity's onCreate
+.*;onCreate\(Landroid/os/Bundle;.*
+
+
+# compile xiaomi
+.*xiaomi.*
+
+# compile 
+# .*com/xiaomi/passport/demo.*
+
+
+# ignore attachBaseContext
+!attachBaseContext
+
+
+# compile all method, use to test compiler
+#.*

@@ -280,7 +280,7 @@ def native_class_methods(smali_path, compiled_methods):
             s = line.strip()
             if s == '.end method':
                 break
-            elif s.startswith('.annotation') and s.find('Dex2C') < 0:
+            elif line.startswith('    .annotation') and s.find('Dex2C') < 0:
                 code_lines.append(line)
                 handle_annotanion()
             else:
@@ -451,6 +451,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
         decompiled_dir = ApkTool.decompile(apkfile)
         native_compiled_dexes(decompiled_dir, compiled_methods)
         copy_compiled_libs(project_dir, decompiled_dir)
+        # eggfly modified
         input("-------> do some manually modification? " + decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
@@ -504,3 +505,4 @@ if __name__ == '__main__':
     finally:
         pass
         # clean_temp_files()
+    
