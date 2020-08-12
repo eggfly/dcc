@@ -18,8 +18,8 @@ from androguard.core.androconf import show_logging
 from androguard.core.bytecodes import apk, dvm
 from androguard.util import read
 from dex2c.compiler import Dex2C
-from dex2c.util import MangleForJni, JniLongName, get_method_triple, get_access_method, is_synthetic_method, \
-    is_native_method
+from dex2c.util import MangleForJni, JniLongName
+from dex2c.util import get_method_triple, get_access_method, is_synthetic_method, is_native_method
 
 time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
@@ -73,16 +73,16 @@ def clean_temp_files():
 
 class ApkTool(object):
     @staticmethod
-    def decompile(apk):
-        outdir = make_temp_dir('dcc-apktool-' + time_str + '-')
-        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', outdir, apk])
-        return outdir
+    def decompile(package_name, apk):
+        output_dir = make_temp_dir('dcc-apktool-' + package_name + "-" + time_str + '-')
+        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', output_dir, apk])
+        return output_dir
 
     @staticmethod
     def compile(decompiled_dir):
-        unsiged_apk = make_temp_file('-unsigned.apk')
-        subprocess.check_call(['java', '-jar', APKTOOL, 'b', '-o', unsiged_apk, decompiled_dir])
-        return unsiged_apk
+        unsigned_apk = make_temp_file('-unsigned.apk')
+        subprocess.check_call(['java', '-jar', APKTOOL, 'b', '-o', unsigned_apk, decompiled_dir])
+        return unsigned_apk
 
 
 def sign(unsigned_apk, signed_apk):
@@ -456,6 +456,9 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         logger.error("file %s is not exists", apk_file)
         return
 
+    parse_apk = APK(apk_file)
+    package_name = parse_apk.packagename
+
     logger.info("--> compile_all_dex")
     compiled_methods, errors = compile_all_dex(apk_file, filtercfg)
 
@@ -473,7 +476,7 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
             shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
     else:
-        project_dir = make_temp_dir('dcc-project-' + time_str + '-')
+        project_dir = make_temp_dir('dcc-project-' + package_name + "-" + time_str + '-')
         shutil.rmtree(project_dir)
         shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
@@ -484,12 +487,11 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         build_project(project_dir)
 
     if is_apk(apk_file) and outapk:
-        decompiled_dir = ApkTool.decompile(apk_file)
+        decompiled_dir = ApkTool.decompile(package_name, apk_file)
         native_compiled_dexes(decompiled_dir, compiled_methods)
         logging.info("copy_compiled_libs to " + decompiled_dir)
         copy_compiled_libs(project_dir, decompiled_dir)
         # modified
-        parse_apk = APK(apk_file)
         current_app_cls_name = parse_apk.get_attribute_value("application", "name")
         if current_app_cls_name is None:
             # TODO: need insert a new app class into AndroidManifest.xml
