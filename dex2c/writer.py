@@ -379,7 +379,7 @@ class Writer(object):
             elif atype[0] == 'D':
                 vars.append('{.d = %s}' % (self.get_variable_or_const(arg)))
             else:
-                raise Exception("Unknow signuare type %s" % (atype))
+                raise Exception("Unknown signature type %s" % (atype))
         self.write(','.join(vars))
         self.write('};\n')
         if rtype != 'V':

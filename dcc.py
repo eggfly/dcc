@@ -398,7 +398,7 @@ def compile_dex(vm, filter_cfg):
             continue
 
         if method_filter.should_compile(m):
-            logger.debug("compiling %s" % (full_name))
+            logger.debug("compiling %s" % full_name)
             try:
                 code = compiler.get_source_method(m)
             except Exception as e:
