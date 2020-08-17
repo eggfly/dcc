@@ -584,7 +584,11 @@ if __name__ == '__main__':
         project_dir = None
 
     dcc_cfg = {}
-    with open('dcc.cfg') as fp:
+
+    script_directory = os.path.split(os.path.abspath(__file__))[0]
+    abs_filename = os.path.join(script_directory, "dcc.cfg")
+
+    with open(abs_filename) as fp:
         dcc_cfg = json.load(fp)
 
     if 'ndk_dir' in dcc_cfg and os.path.exists(dcc_cfg['ndk_dir']):
