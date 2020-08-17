@@ -227,7 +227,7 @@ class IrBuilder(object):
             for ins in node.get_instr_list():
                 var = ins.get_value()
                 if var and var.get_type() is None:
-                    raise Exception('unkonw type %s' % var)
+                    raise Exception('unknown type %s' % var)
 
     def verify_phi_operand_type(self):
         for node in self.graph.rpo:
