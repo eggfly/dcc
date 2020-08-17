@@ -1,0 +1,4 @@
+
+invoke-static {}, Lkvm/NcInit;->setup()V
+
+

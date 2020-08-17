@@ -43,6 +43,7 @@ DEBUG = False
 
 logger = logging.getLogger('dex2c.compiler')
 
+
 def auto_vm(filename):
     ret = androconf.is_android(filename)
     if ret == 'APK':
@@ -550,7 +551,7 @@ class Dex2C:
     def __init__(self, vm, vmx):
         self.vm = vm
         self.vmx = vmx
-        
+
     def get_source_method(self, m):
         mx = self.vmx.get_method(m)
         z = IrBuilder(mx)

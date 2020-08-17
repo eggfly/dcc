@@ -9,32 +9,41 @@ import subprocess
 import sys
 import tempfile
 import json
+import datetime
 
+from pyaxmlparser import APK
 from androguard.core import androconf
 from androguard.core.analysis import analysis
 from androguard.core.androconf import show_logging
 from androguard.core.bytecodes import apk, dvm
 from androguard.util import read
 from dex2c.compiler import Dex2C
-from dex2c.util import JniLongName, get_method_triple, get_access_method, is_synthetic_method, is_native_method
+from dex2c.util import MangleForJni, JniLongName
+from dex2c.util import get_method_triple, get_access_method, is_synthetic_method, is_native_method
+
+time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
 APKTOOL = 'tools/apktool.jar'
 SIGNJAR = 'tools/signapk.jar'
 NDKBUILD = 'ndk-build'
 LIBNATIVECODE = 'libnc.so'
 
+show_logging(level=logging.INFO)
 logger = logging.getLogger('dcc')
 
 tempfiles = []
 
+
 def is_windows():
     return os.name == 'nt'
+
 
 def cpu_count():
     num_processes = os.cpu_count()
     if num_processes is None:
         num_processes = 2
     return num_processes
+
 
 def make_temp_dir(prefix='dcc'):
     global tempfiles
@@ -64,16 +73,16 @@ def clean_temp_files():
 
 class ApkTool(object):
     @staticmethod
-    def decompile(apk):
-        outdir = make_temp_dir('dcc-apktool-')
-        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', outdir, apk])
-        return outdir
+    def decompile(package_name, apk):
+        output_dir = make_temp_dir('dcc-apktool-' + package_name + "-" + time_str + '-')
+        subprocess.check_call(['java', '-jar', APKTOOL, 'd', '-r', '--only-main-classes', '-f', '-o', output_dir, apk])
+        return output_dir
 
     @staticmethod
     def compile(decompiled_dir):
-        unsiged_apk = make_temp_file('-unsigned.apk')
-        subprocess.check_call(['java', '-jar', APKTOOL, 'b', '-o', unsiged_apk, decompiled_dir])
-        return unsiged_apk
+        unsigned_apk = make_temp_file('-unsigned.apk')
+        subprocess.check_call(['java', '-jar', APKTOOL, 'b', '-o', unsigned_apk, decompiled_dir])
+        return unsigned_apk
 
 
 def sign(unsigned_apk, signed_apk):
@@ -87,14 +96,17 @@ def build_project(project_dir, num_processes=0):
     subprocess.check_call([NDKBUILD, '-j%d' % cpu_count(), '-C', project_dir])
 
 
-def auto_vm(filename):
+def auto_vms(filename):
     ret = androconf.is_android(filename)
     if ret == 'APK':
-        return dvm.DalvikVMFormat(apk.APK(filename).get_dex())
+        vms = []
+        for dex in apk.APK(filename).get_all_dex():
+            vms.append(dvm.DalvikVMFormat(dex))
+        return vms
     elif ret == 'DEX':
-        return dvm.DalvikVMFormat(read(filename))
+        return [dvm.DalvikVMFormat(read(filename))]
     elif ret == 'DEY':
-        return dvm.DalvikOdexVMFormat(read(filename))
+        return [dvm.DalvikOdexVMFormat(read(filename))]
     raise Exception("unsupported file %s" % filename)
 
 
@@ -199,6 +211,10 @@ class MethodFilter(object):
         method_triple = get_method_triple(method)
         cls_name, name, _ = method_triple
 
+        if name == "<clinit>" or name == "<init>":
+            # do not compile constructor
+            return False
+
         # Android VM may find the wrong method using short jni name
         # don't compile function if there is a same named native method
         if (cls_name, name) in self.native_methods:
@@ -207,6 +223,7 @@ class MethodFilter(object):
         full_name = ''.join(method_triple)
         for rule in self._keep_filters:
             if rule.search(full_name):
+                # logging.info("filter rule " + str(rule) + " matched: " + full_name)
                 return False
 
         if full_name in self._compile_full_match:
@@ -249,7 +266,7 @@ def native_class_methods(smali_path, compiled_methods):
     def next_line():
         return fp.readline()
 
-    def handle_annotanion():
+    def handle_annotation():
         while True:
             line = next_line()
             if not line:
@@ -271,7 +288,7 @@ def native_class_methods(smali_path, compiled_methods):
                 break
             elif line.startswith('    .annotation') and s.find('Dex2C') < 0:
                 code_lines.append(line)
-                handle_annotanion()
+                handle_annotation()
             else:
                 continue
 
@@ -317,19 +334,41 @@ def native_compiled_dexes(decompiled_dir, compiled_methods):
 
 
 def write_compiled_methods(project_dir, compiled_methods):
+    logger.info("start write cpp --> " + project_dir)
+    class_to_methods_dict = {}
     source_dir = os.path.join(project_dir, 'jni', 'nc')
     if not os.path.exists(source_dir):
         os.makedirs(source_dir)
-
     for method_triple, code in compiled_methods.items():
-        full_name = JniLongName(*method_triple)
-        filepath = os.path.join(source_dir, full_name) + '.cpp'
-        if os.path.exists(filepath):
-            logger.warning("Overwrite file %s %s" % (filepath, method_triple))
-
-        with open(filepath, 'w') as fp:
-            fp.write('#include "Dex2C.h"\n' + code)
-
+        cls_name, method_name, signature = method_triple
+        assert cls_name[0] == 'L'
+        assert cls_name[-1] == ';'
+        cls_name = cls_name[1:-1]
+        package_name = "/".join(cls_name.split("/")[:-1])
+        if package_name != "":
+            mangled_package_name = MangleForJni(package_name)
+        else:
+            mangled_package_name = "__default_package_name__"
+        if mangled_package_name not in class_to_methods_dict:
+            # one package name, multiple groups of codes
+            class_to_methods_dict[mangled_package_name] = [[]]
+        # full_name = JniLongName(*method_triple)
+        if len(class_to_methods_dict[mangled_package_name][-1]) > 1000:
+            # split to multiple files
+            class_to_methods_dict[mangled_package_name].append([])
+        class_to_methods_dict[mangled_package_name][-1].append(code)
+    for file_name, code_groups in class_to_methods_dict.items():
+        for idx, codes in enumerate(code_groups):
+            file_path = os.path.join(source_dir, file_name + "_" + str(idx)) + '.cpp'
+            if os.path.exists(file_path):
+                logger.warning("Overwrite file %s" % file_path)
+            with open(file_path, 'w') as fp:
+                fp.write('#include "Dex2C.h"\n\n\n')
+                for code in codes:
+                    fp.write("\n\n\n")
+                    fp.write(code)
+                    fp.write("\n\n\n")
+    logger.info("write all cpp done! --> " + source_dir)
     with open(os.path.join(source_dir, 'compiled_methods.txt'), 'w') as fp:
         fp.write('\n'.join(list(map(''.join, compiled_methods.keys()))))
 
@@ -340,20 +379,15 @@ def archive_compiled_code(project_dir):
     return outfile
 
 
-def compile_dex(apkfile, filtercfg):
-    show_logging(level=logging.INFO)
-
-    d = auto_vm(apkfile)
-    dx = analysis.Analysis(d)
-
-    method_filter = MethodFilter(filtercfg, d)
-
-    compiler = Dex2C(d, dx)
+def compile_dex(vm, filter_cfg):
+    vmx = analysis.Analysis(vm)
+    method_filter = MethodFilter(filter_cfg, vm)
+    compiler = Dex2C(vm, vmx)
 
     compiled_method_code = {}
     errors = []
 
-    for m in d.get_methods():
+    for m in vm.get_methods():
         method_triple = get_method_triple(m)
 
         jni_longname = JniLongName(*method_triple)
@@ -364,7 +398,7 @@ def compile_dex(apkfile, filtercfg):
             continue
 
         if method_filter.should_compile(m):
-            logger.debug("compiling %s" % (full_name))
+            logger.debug("compiling %s" % full_name)
             try:
                 code = compiler.get_source_method(m)
             except Exception as e:
@@ -377,15 +411,56 @@ def compile_dex(apkfile, filtercfg):
 
     return compiled_method_code, errors
 
+
+def compile_all_dex(apkfile, filtercfg):
+    logger.info("--> start reading all dex from " + apkfile)
+    vms = auto_vms(apkfile)
+    compiled_method_code = {}
+    compile_error_msg = []
+    for vm in vms:
+        logger.info("--> start compile_dex: " + str(vm))
+        codes, errors = compile_dex(vm, filtercfg)
+        compiled_method_code.update(codes)
+        compile_error_msg.extend(errors)
+
+    return compiled_method_code, compile_error_msg
+
+
 def is_apk(name):
     return name.endswith('.apk')
 
-def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
-    if not os.path.exists(apkfile):
-        logger.error("file %s is not exists", apkfile)
+
+def get_super_cls_name_from_smali(decompiled_dir, cls_name):
+    cls_class_parts = cls_name.split(".")
+    smali_file = os.path.join(decompiled_dir, "smali", *cls_class_parts) + ".smali"
+    if not os.path.isfile(smali_file):
+        logger.warning(smali_file + " is not a file")
+        return None
+    with open(smali_file) as fp:
+        while True:
+            line = fp.readline()
+            if not line:
+                break
+            line = line.strip()
+            if line.startswith(".super"):
+                super_cls_l_name = line.split(" ")[-1]
+                assert super_cls_l_name[0] == 'L'
+                assert super_cls_l_name[-1] == ';'
+                super_cls_name = super_cls_l_name[1:-1].replace("/", ".")
+                return super_cls_name
+    return None
+
+
+def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
+    if not os.path.exists(apk_file):
+        logger.error("file %s is not exists", apk_file)
         return
 
-    compiled_methods, errors = compile_dex(apkfile, filtercfg)
+    parse_apk = APK(apk_file)
+    package_name = parse_apk.packagename
+
+    logger.info("--> compile_all_dex")
+    compiled_methods, errors = compile_all_dex(apk_file, filtercfg)
 
     if errors:
         logger.warning('================================')
@@ -401,7 +476,7 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
             shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
     else:
-        project_dir = make_temp_dir('dcc-project-')
+        project_dir = make_temp_dir('dcc-project-' + package_name + "-" + time_str + '-')
         shutil.rmtree(project_dir)
         shutil.copytree('project', project_dir)
         write_compiled_methods(project_dir, compiled_methods)
@@ -411,14 +486,74 @@ def dcc_main(apkfile, filtercfg, outapk, do_compile=True, project_dir=None, sour
     if do_compile:
         build_project(project_dir)
 
-    if is_apk(apkfile) and outapk:
-        decompiled_dir = ApkTool.decompile(apkfile)
+    if is_apk(apk_file) and outapk:
+        decompiled_dir = ApkTool.decompile(package_name, apk_file)
         native_compiled_dexes(decompiled_dir, compiled_methods)
+        logging.info("copy_compiled_libs to " + decompiled_dir)
         copy_compiled_libs(project_dir, decompiled_dir)
-        # eggfly modified
-        input("manually do some modify? " + decompiled_dir)
+        # modified
+        current_app_cls_name = parse_apk.get_attribute_value("application", "name")
+        if current_app_cls_name is None:
+            # TODO: need insert a new app class into AndroidManifest.xml
+            raise NotImplementedError
+        while True:
+            super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
+            logging.info("get super class: %s" % super_app_cls_name)
+            if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
+                break
+            current_app_cls_name = super_app_cls_name
+        if current_app_cls_name is None:
+            logger.warning("current_app_cls_name is None")
+        else:
+            insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
+            smali_kvm_dir = os.path.join(decompiled_dir, "smali", "kvm")
+            if not os.path.exists(smali_kvm_dir):
+                shutil.copytree("kvm", smali_kvm_dir)
+            else:
+                logger.warning("kvm already exist??")
+            logger.info("smali initialize code modifications complete!")
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
+
+
+def insert_init_code_to_smali(current_app_cls_name, decompiled_dir):
+    most_super_class_parts = current_app_cls_name.split(".")
+    smali_file = os.path.join(decompiled_dir, "smali", *most_super_class_parts) + ".smali"
+    assert os.path.isfile(smali_file)
+    logging.info("try to modify smali code for most super app class: " + smali_file)
+    modified_smali_lines = []
+    clinit_start = clinit_locals_start = nc_init_inserted = False
+    with open(smali_file) as fp:
+        while True:
+            line = fp.readline()
+            if not line:
+                break
+            modified_smali_lines.append(line)
+            line = line.strip()
+            if line.startswith(".method") and line.endswith("<clinit>()V"):
+                logger.info("found smali line: " + line)
+                clinit_start = True
+            if clinit_start and line.startswith(".locals"):
+                clinit_locals_start = True
+            if clinit_start and clinit_locals_start:
+                logger.info("found and insert invoke code to the <clinit> function")
+                modified_smali_lines.append("\n    invoke-static {}, Lkvm/NcInit;->setup()V\n")
+                clinit_start = clinit_locals_start = False
+                nc_init_inserted = True
+    if not nc_init_inserted:
+        logger.info("<clinit> not found, add a new <clinit> function at tail")
+        modified_smali_lines.append("""
+.method static constructor <clinit>()V
+    .locals 0
+    
+    invoke-static {}, Lkvm/NcInit;->setup()V
+
+    return-void
+.end method
+""")
+    # write lines
+    with open(smali_file, "w") as fp:
+        fp.writelines(modified_smali_lines)
 
 
 sys.setrecursionlimit(5000)
@@ -432,7 +567,8 @@ if __name__ == '__main__':
     parser.add_argument('--filter', default='filter.txt', help='Method filter configure file')
     parser.add_argument('--no-build', action='store_true', default=False, help='Do not build the compiled code')
     parser.add_argument('--source-dir', help='The compiled cpp code output directory.')
-    parser.add_argument('--project-archive', default='project-source.zip', help='Archive the project directory')
+    parser.add_argument('--project-archive', default='project-source-' + time_str + '.zip',
+                        help='Archive the project directory')
 
     args = vars(parser.parse_args())
     infile = args['infile']
@@ -448,7 +584,11 @@ if __name__ == '__main__':
         project_dir = None
 
     dcc_cfg = {}
-    with open('dcc.cfg') as fp:
+
+    script_directory = os.path.split(os.path.abspath(__file__))[0]
+    abs_filename = os.path.join(script_directory, "dcc.cfg")
+
+    with open(abs_filename) as fp:
         dcc_cfg = json.load(fp)
 
     if 'ndk_dir' in dcc_cfg and os.path.exists(dcc_cfg['ndk_dir']):
@@ -468,4 +608,3 @@ if __name__ == '__main__':
     finally:
         pass
         # clean_temp_files()
-
