@@ -543,12 +543,18 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
 
 def insert_init_code_to_smali(current_app_cls_name, decompiled_dir):
     most_super_class_parts = current_app_cls_name.split(".")
-    smali_file = os.path.join(decompiled_dir, "smali", *most_super_class_parts) + ".smali"
-    assert os.path.isfile(smali_file)
-    logging.info("try to modify smali code for most super app class: " + smali_file)
+    files = os.listdir(decompiled_dir)
+    found_smali_file = None
+    for f in files:
+        smali_file = os.path.join(decompiled_dir, f, *most_super_class_parts) + ".smali"
+        if os.path.isfile(smali_file):
+            found_smali_file = smali_file
+            break
+    assert found_smali_file is not None
+    logging.info("try to modify smali code for most super app class: " + found_smali_file)
     modified_smali_lines = []
     clinit_start = clinit_locals_start = nc_init_inserted = False
-    with open(smali_file) as fp:
+    with open(found_smali_file) as fp:
         while True:
             line = fp.readline()
             if not line:
@@ -577,7 +583,7 @@ def insert_init_code_to_smali(current_app_cls_name, decompiled_dir):
 .end method
 """)
     # write lines
-    with open(smali_file, "w") as fp:
+    with open(found_smali_file, "w") as fp:
         fp.writelines(modified_smali_lines)
 
 
