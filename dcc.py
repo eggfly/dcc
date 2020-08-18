@@ -506,50 +506,54 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         # modified
         current_app_cls_name = parse_apk.get_attribute_value("application", "name")
         if current_app_cls_name is None:
-            # TODO: need insert a new app class into AndroidManifest.xml
-            binary_manifest = os.path.join(decompiled_dir, "AndroidManifest.xml")
-            modified_binary_manifest = os.path.join(decompiled_dir, "AndroidManifest-app.xml")
-            # subprocess.check_call(
-            #     ['java', '-jar', AXMLEditor,
-            #      '-attr', '-i', 'application', 'package', 'name', 'kvm.MyApp',
-            #      binary_manifest, modified_binary_manifest])
-            # subprocess.check_call(
-            #     ['/Users/eggfly/github/AmBinaryEditor/bin/Debug/ameditor', 'attr', "--add",
-            #      'application', '-d', '1', '-n', 'name', '-t', '3', '-v', 'kvm.MyApp',
-            #      '-i', binary_manifest, '-o', modified_binary_manifest])
-            subprocess.check_call(
-                ['java', '-jar', ManifestEditor, binary_manifest, "-an", "kvm.MyApp", "-o",
-                 modified_binary_manifest])
-            os.remove(binary_manifest)
-            os.rename(modified_binary_manifest, binary_manifest)
-            logging.info("binary AndroidManifest.xml written: " + binary_manifest)
+            insert_new_app_cls(decompiled_dir)
         else:
-            while True:
-                super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
-                logging.info("get super class: %s" % super_app_cls_name)
-                if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
-                    break
-                current_app_cls_name = super_app_cls_name
-            if current_app_cls_name is None:
-                logger.warning("current_app_cls_name is None")
+            if current_app_cls_name.startswith("."):
+                current_app_cls_name = package_name + current_app_cls_name
+            smali_file = find_app_smali(current_app_cls_name, decompiled_dir)
+            if smali_file is None:
+                logger.warning("app %s declared, but class not exists, insert new app class." % current_app_cls_name)
+                insert_new_app_cls(decompiled_dir)
             else:
-                insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
-                logger.info("smali initialize code modifications complete!")
+                modify_existed_app_class(current_app_cls_name, decompiled_dir)
         logger.info("copy kvm smali dir...")
         copy_kvm_smali_dir(decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
 
 
-def insert_init_code_to_smali(current_app_cls_name, decompiled_dir):
-    most_super_class_parts = current_app_cls_name.split(".")
-    files = os.listdir(decompiled_dir)
-    found_smali_file = None
-    for f in files:
-        smali_file = os.path.join(decompiled_dir, f, *most_super_class_parts) + ".smali"
-        if os.path.isfile(smali_file):
-            found_smali_file = smali_file
+def insert_new_app_cls(decompiled_dir):
+    # TODO: need insert a new app class into AndroidManifest.xml
+    binary_manifest = os.path.join(decompiled_dir, "AndroidManifest.xml")
+    modified_binary_manifest = os.path.join(decompiled_dir, "AndroidManifest-app.xml")
+    subprocess.check_call(
+        ['java', '-jar', ManifestEditor, binary_manifest, "-an", "kvm.MyApp", "-o",
+         modified_binary_manifest])
+    os.remove(binary_manifest)
+    os.rename(modified_binary_manifest, binary_manifest)
+    logging.info("binary AndroidManifest.xml written: " + binary_manifest)
+
+
+def modify_existed_app_class(current_app_cls_name, decompiled_dir):
+    while True:
+        super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
+        logging.info("get super class: %s" % super_app_cls_name)
+        if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
             break
+        current_app_cls_name = super_app_cls_name
+    if current_app_cls_name is None:
+        logger.warning("current_app_cls_name is None")
+    else:
+        insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
+        logger.info("smali initialize code modifications complete!")
+
+
+def insert_init_code_to_smali(app_cls_name, decompiled_dir):
+    pass
+
+
+def insert_init_code_to_smali(app_cls_name, decompiled_dir):
+    found_smali_file = find_app_smali(app_cls_name, decompiled_dir)
     assert found_smali_file is not None
     logging.info("try to modify smali code for most super app class: " + found_smali_file)
     modified_smali_lines = []
@@ -574,17 +578,29 @@ def insert_init_code_to_smali(current_app_cls_name, decompiled_dir):
     if not nc_init_inserted:
         logger.info("<clinit> not found, add a new <clinit> function at tail")
         modified_smali_lines.append("""
-.method static constructor <clinit>()V
-    .locals 0
-    
-    invoke-static {}, Lkvm/NcInit;->setup()V
+    .method static constructor <clinit>()V
+        .locals 0
 
-    return-void
-.end method
-""")
+        invoke-static {}, Lkvm/NcInit;->setup()V
+
+        return-void
+    .end method
+    """)
     # write lines
     with open(found_smali_file, "w") as fp:
         fp.writelines(modified_smali_lines)
+
+
+def find_app_smali(app_cls_name, decompiled_dir):
+    most_super_class_parts = app_cls_name.split(".")
+    files = os.listdir(decompiled_dir)
+    found_smali_file = None
+    for f in files:
+        smali_file = os.path.join(decompiled_dir, f, *most_super_class_parts) + ".smali"
+        if os.path.isfile(smali_file):
+            found_smali_file = smali_file
+            break
+    return found_smali_file
 
 
 sys.setrecursionlimit(5000)
