@@ -11,12 +11,15 @@ import tempfile
 import json
 import datetime
 
+from lxml import etree
 from pyaxmlparser import APK
 from androguard.core import androconf
 from androguard.core.analysis import analysis
 from androguard.core.androconf import show_logging
 from androguard.core.bytecodes import apk, dvm
 from androguard.util import read
+from androguard.core.bytecodes.axml import AXMLPrinter
+
 from dex2c.compiler import Dex2C
 from dex2c.util import MangleForJni, JniLongName
 from dex2c.util import get_method_triple, get_access_method, is_synthetic_method, is_native_method
@@ -24,6 +27,7 @@ from dex2c.util import get_method_triple, get_access_method, is_synthetic_method
 time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
 APKTOOL = 'tools/apktool.jar'
+ManifestEditor = 'tools/ManifestEditor-1.0.2.jar'
 SIGNJAR = 'tools/signapk.jar'
 NDKBUILD = 'ndk-build'
 LIBNATIVECODE = 'libnc.so'
@@ -451,6 +455,14 @@ def get_super_cls_name_from_smali(decompiled_dir, cls_name):
     return None
 
 
+def copy_kvm_smali_dir(decompiled_dir):
+    smali_kvm_dir = os.path.join(decompiled_dir, "smali", "kvm")
+    if not os.path.exists(smali_kvm_dir):
+        shutil.copytree("kvm", smali_kvm_dir)
+    else:
+        logger.warning("kvm already exist??")
+
+
 def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, source_archive='project-source.zip'):
     if not os.path.exists(apk_file):
         logger.error("file %s is not exists", apk_file)
@@ -495,23 +507,36 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         current_app_cls_name = parse_apk.get_attribute_value("application", "name")
         if current_app_cls_name is None:
             # TODO: need insert a new app class into AndroidManifest.xml
-            raise NotImplementedError
-        while True:
-            super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
-            logging.info("get super class: %s" % super_app_cls_name)
-            if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
-                break
-            current_app_cls_name = super_app_cls_name
-        if current_app_cls_name is None:
-            logger.warning("current_app_cls_name is None")
+            binary_manifest = os.path.join(decompiled_dir, "AndroidManifest.xml")
+            modified_binary_manifest = os.path.join(decompiled_dir, "AndroidManifest-app.xml")
+            # subprocess.check_call(
+            #     ['java', '-jar', AXMLEditor,
+            #      '-attr', '-i', 'application', 'package', 'name', 'kvm.MyApp',
+            #      binary_manifest, modified_binary_manifest])
+            # subprocess.check_call(
+            #     ['/Users/eggfly/github/AmBinaryEditor/bin/Debug/ameditor', 'attr', "--add",
+            #      'application', '-d', '1', '-n', 'name', '-t', '3', '-v', 'kvm.MyApp',
+            #      '-i', binary_manifest, '-o', modified_binary_manifest])
+            subprocess.check_call(
+                ['java', '-jar', ManifestEditor, binary_manifest, "-an", "kvm.MyApp", "-o",
+                 modified_binary_manifest])
+            os.remove(binary_manifest)
+            os.rename(modified_binary_manifest, binary_manifest)
+            logging.info("binary AndroidManifest.xml written: " + binary_manifest)
         else:
-            insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
-            smali_kvm_dir = os.path.join(decompiled_dir, "smali", "kvm")
-            if not os.path.exists(smali_kvm_dir):
-                shutil.copytree("kvm", smali_kvm_dir)
+            while True:
+                super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
+                logging.info("get super class: %s" % super_app_cls_name)
+                if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
+                    break
+                current_app_cls_name = super_app_cls_name
+            if current_app_cls_name is None:
+                logger.warning("current_app_cls_name is None")
             else:
-                logger.warning("kvm already exist??")
-            logger.info("smali initialize code modifications complete!")
+                insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
+                logger.info("smali initialize code modifications complete!")
+        logger.info("copy kvm smali dir...")
+        copy_kvm_smali_dir(decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
         sign(unsigned_apk, outapk)
 
