@@ -505,17 +505,25 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         copy_compiled_libs(project_dir, decompiled_dir)
         # modified
         current_app_cls_name = parse_apk.get_attribute_value("application", "name")
-        if current_app_cls_name is None:
+        current_app_component_factory_cls_name = parse_apk.get_attribute_value("application", "appComponentFactory")
+        if not current_app_cls_name and not current_app_component_factory_cls_name:
+            # both empty
             insert_new_app_cls(decompiled_dir)
         else:
-            if current_app_cls_name.startswith("."):
-                current_app_cls_name = package_name + current_app_cls_name
-            smali_file = find_app_smali(current_app_cls_name, decompiled_dir)
+            # appComponentFactory first
+            if current_app_component_factory_cls_name is not None:
+                cls_name = current_app_component_factory_cls_name
+            else:
+                cls_name = current_app_cls_name
+            if cls_name.startswith("."):
+                cls_name = package_name + cls_name
+            smali_file = find_app_smali(cls_name, decompiled_dir)
             if smali_file is None:
-                logger.warning("app %s declared, but class not exists, insert new app class." % current_app_cls_name)
+                logger.warning(
+                    "** need some more check ** app %s declared, but class not exists, insert new app class." % cls_name)
                 insert_new_app_cls(decompiled_dir)
             else:
-                modify_existed_app_class(current_app_cls_name, decompiled_dir)
+                modify_existed_app_or_factory_class(cls_name, decompiled_dir)
         logger.info("copy kvm smali dir...")
         copy_kvm_smali_dir(decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
@@ -534,22 +542,20 @@ def insert_new_app_cls(decompiled_dir):
     logging.info("binary AndroidManifest.xml written: " + binary_manifest)
 
 
-def modify_existed_app_class(current_app_cls_name, decompiled_dir):
+def modify_existed_app_or_factory_class(cls_name, decompiled_dir):
     while True:
-        super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, current_app_cls_name)
+        super_app_cls_name = get_super_cls_name_from_smali(decompiled_dir, cls_name)
         logging.info("get super class: %s" % super_app_cls_name)
-        if super_app_cls_name is None or super_app_cls_name == "android.app.Application":
+        if super_app_cls_name is None \
+                or super_app_cls_name == "android.app.Application" \
+                or super_app_cls_name == "android.app.AppComponentFactory":
             break
-        current_app_cls_name = super_app_cls_name
-    if current_app_cls_name is None:
+        cls_name = super_app_cls_name
+    if cls_name is None:
         logger.warning("current_app_cls_name is None")
     else:
-        insert_init_code_to_smali(current_app_cls_name, decompiled_dir)
+        insert_init_code_to_smali(cls_name, decompiled_dir)
         logger.info("smali initialize code modifications complete!")
-
-
-def insert_init_code_to_smali(app_cls_name, decompiled_dir):
-    pass
 
 
 def insert_init_code_to_smali(app_cls_name, decompiled_dir):

@@ -48,5 +48,17 @@ retrofit2
 !PassportUIInitProvider
 !PassportUI
 
+#!instantiateActivity
+#!instantiateActivityCompat
+#!instantiateApplication
+#!instantiateApplicationCompat
+#!instantiateProvider
+#!instantiateProviderCompat
+#!instantiateReceiver
+#!instantiateReceiverCompat
+#!instantiateService
+#!instantiateServiceCompat
+
+
 # compile all method, use to test compiler
 .*
