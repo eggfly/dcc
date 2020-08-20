@@ -108,12 +108,6 @@ def auto_vms(filename):
             dex = apk_obj.get_file(dex_file)
             vms[name] = dvm.DalvikVMFormat(dex)
         return vms
-    elif ret == 'DEX':
-        vms["classes"] = dvm.DalvikVMFormat(read(filename))
-        return vms
-    elif ret == 'DEY':
-        vms["classes"] = dvm.DalvikOdexVMFormat(read(filename))
-        return vms
     raise Exception("unsupported file %s" % filename)
 
 
@@ -341,7 +335,6 @@ def native_compiled_dexes(decompiled_dir, compiled_methods):
 
 
 def write_compiled_methods(project_dir, classes_prefix, compiled_methods):
-    logger.info("start write cpp --> " + project_dir)
     class_to_methods_dict = {}
     source_dir = os.path.join(project_dir, 'jni', 'nc')
     if not os.path.exists(source_dir):
@@ -375,9 +368,6 @@ def write_compiled_methods(project_dir, classes_prefix, compiled_methods):
                     fp.write("\n\n\n")
                     fp.write(code)
                     fp.write("\n\n\n")
-    logger.info("write all cpp done! --> " + source_dir)
-    with open(os.path.join(source_dir, 'compiled_methods.txt'), 'w') as fp:
-        fp.write('\n'.join(list(map(''.join, compiled_methods.keys()))))
 
 
 def archive_compiled_code(project_dir):
@@ -390,11 +380,13 @@ def compile_dex(vm, filter_cfg):
     vmx = analysis.Analysis(vm)
     method_filter = MethodFilter(filter_cfg, vm)
     compiler = Dex2C(vm, vmx)
+    total_methods_count = 0
 
     compiled_method_code = {}
     errors = []
 
     for m in vm.get_methods():
+        total_methods_count += 1
         method_triple = get_method_triple(m)
 
         jni_longname = JniLongName(*method_triple)
@@ -414,28 +406,47 @@ def compile_dex(vm, filter_cfg):
                 continue
 
             if code:
-                code_bytes = bytes(code, "utf-8")
                 compiled_method_code[method_triple] = code
 
-    return compiled_method_code, errors
+    return compiled_method_code, errors, total_methods_count
 
 
-def compile_and_save_code(apk_file, project_dir, filter_cfg):
+def compile_all_dex(apk_file, project_dir, filter_cfg):
     logger.info("--> start reading all dex from " + apk_file)
-    vms = auto_vms(apk_file)
     compiled_methods = set()
-    for classes_prefix, vm in vms.items():
-        logger.info("--> start compile_dex: %s.dex %s" % (classes_prefix, str(vm)))
-        codes, errors = compile_dex(vm, filter_cfg)
-        compiled_methods.update(codes.keys())
-        if errors:
-            logger.warning('================================')
-            logger.warning('\n'.join(errors))
-            logger.warning('================================')
-        # write_methods
-        logger.info("--> start write_compiled_methods: %s.dex codes=%d" % (classes_prefix, len(codes)))
-        write_compiled_methods(project_dir, classes_prefix, codes)
+    ret = androconf.is_android(apk_file)
+    if ret == 'APK':
+        apk_obj = apk.APK(apk_file)
+        dex_names = list(apk_obj.get_dex_names())
+        logger.info("--> multidex count=%d" % len(dex_names))
+        for dex_file in dex_names:
+            classes_prefix = dex_file.rstrip(".dex")
+            dex = apk_obj.get_file(dex_file)
+            logger.info("--> %s start create dvm.DalvikVMFormat" % dex_file)
+            # noinspection PyTypeChecker
+            vm = dvm.DalvikVMFormat(dex)
+            compile_dex_and_write_code(classes_prefix, compiled_methods, filter_cfg, project_dir, vm)
+    else:
+        raise Exception("unsupported file %s" % apk_file)
+    # save compiled_methods.txt
+    logger.info("all cpp methods count=%d, save compiled_methods.txt: %s" % (len(compiled_methods), project_dir))
+    with open(os.path.join(project_dir, 'compiled_methods.txt'), 'w') as fp:
+        fp.write('\n'.join(list(map(''.join, compiled_methods))))
     return compiled_methods
+
+
+def compile_dex_and_write_code(classes_prefix, compiled_methods, filter_cfg, project_dir, vm):
+    logger.info("  --> %s.dex start compile_dex: %s" % (classes_prefix, str(vm)))
+    codes, errors, total = compile_dex(vm, filter_cfg)
+    compiled_methods.update(codes.keys())
+    if errors:
+        logger.warning('================================')
+        logger.warning('\n'.join(errors))
+        logger.warning('================================')
+    # write_methods
+    logger.info(
+        "  --> %s.dex start write to cpp files, compiled/total=%d/%d" % (classes_prefix, len(codes), total))
+    write_compiled_methods(project_dir, classes_prefix, codes)
 
 
 def is_apk(name):
@@ -488,7 +499,9 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         shutil.rmtree(project_dir)
         shutil.copytree('project', project_dir)
 
-    compiled_methods = compile_and_save_code(apk_file, project_dir, filtercfg)
+    logger.info("--> project dir %s" % project_dir)
+
+    compiled_methods = compile_all_dex(apk_file, project_dir, filtercfg)
 
     if len(compiled_methods) == 0:
         logger.warning("no compiled methods")
