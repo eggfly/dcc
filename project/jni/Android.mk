@@ -4,11 +4,11 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := nc
 LOCAL_LDLIBS    := -llog
 
-#ifeq ($(APP_ABI),armeabi-v7a))
-#  LOCAL_LDFLAGS += -Wl,--long-plt
-#endif
+ifeq ($(TARGET_ARCH_ABI), armeabi-v7a)
+	LOCAL_LDFLAGS += -Wl,--long-plt
+endif
 
-LOCAL_LDFLAGS += -Wl,--long-plt
+# LOCAL_LDFLAGS += -Wl,--long-plt
 
 SOURCES := $(wildcard $(LOCAL_PATH)/nc/*.cpp)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/nc
