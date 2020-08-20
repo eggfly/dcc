@@ -28,14 +28,14 @@ time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
 APKTOOL = 'tools/apktool.jar'
 ManifestEditor = 'tools/ManifestEditor-1.0.2.jar'
-SIGNJAR = 'tools/signapk.jar'
-NDKBUILD = 'ndk-build'
+SIGN_JAR = 'tools/signapk.jar'
+NDK_BUILD = 'ndk-build'
 LIBNATIVECODE = 'libnc.so'
 
 show_logging(level=logging.INFO)
 logger = logging.getLogger('dcc')
 
-tempfiles = []
+temp_files = []
 
 
 def is_windows():
@@ -50,22 +50,22 @@ def cpu_count():
 
 
 def make_temp_dir(prefix='dcc'):
-    global tempfiles
+    global temp_files
     tmp = tempfile.mkdtemp(prefix=prefix)
-    tempfiles.append(tmp)
+    temp_files.append(tmp)
     return tmp
 
 
 def make_temp_file(suffix=''):
-    global tempfiles
+    global temp_files
     fd, tmp = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
-    tempfiles.append(tmp)
+    temp_files.append(tmp)
     return tmp
 
 
 def clean_temp_files():
-    for name in tempfiles:
+    for name in temp_files:
         if not os.path.exists(name):
             continue
         logger.info('removing %s' % name)
@@ -93,11 +93,11 @@ def sign(unsigned_apk, signed_apk):
     pem = os.path.join('tests/testkey/testkey.x509.pem')
     pk8 = os.path.join('tests/testkey/testkey.pk8')
     logger.info("signing %s -> %s" % (unsigned_apk, signed_apk))
-    subprocess.check_call(['java', '-jar', SIGNJAR, pem, pk8, unsigned_apk, signed_apk])
+    subprocess.check_call(['java', '-jar', SIGN_JAR, pem, pk8, unsigned_apk, signed_apk])
 
 
 def build_project(project_dir, num_processes=0):
-    subprocess.check_call([NDKBUILD, '-j%d' % cpu_count(), '-C', project_dir])
+    subprocess.check_call([NDK_BUILD, '-j%d' % cpu_count(), '-C', project_dir])
 
 
 def auto_vms(filename):
@@ -647,9 +647,9 @@ if __name__ == '__main__':
     if 'ndk_dir' in dcc_cfg and os.path.exists(dcc_cfg['ndk_dir']):
         ndk_dir = dcc_cfg['ndk_dir']
         if is_windows():
-            NDKBUILD = os.path.join(ndk_dir, 'ndk-build.cmd')
+            NDK_BUILD = os.path.join(ndk_dir, 'ndk-build.cmd')
         else:
-            NDKBUILD = os.path.join(ndk_dir, 'ndk-build')
+            NDK_BUILD = os.path.join(ndk_dir, 'ndk-build')
 
     if 'apktool' in dcc_cfg and os.path.exists(dcc_cfg['apktool']):
         APKTOOL = dcc_cfg['apktool']
