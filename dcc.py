@@ -524,7 +524,10 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
         logger.info("copy kvm smali dir...")
         copy_kvm_smali_dir(decompiled_dir)
         unsigned_apk = ApkTool.compile(decompiled_dir)
+        unsigned_apk_output_path = os.path.splitext(outapk)[0] + "-unsigned.apk"
         sign(unsigned_apk, outapk)
+        shutil.move(unsigned_apk, unsigned_apk_output_path)
+    logger.info("all done!")
 
 
 def insert_init_code(decompiled_dir, package_name, parse_apk):
