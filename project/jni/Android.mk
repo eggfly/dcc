@@ -4,7 +4,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := nc
 LOCAL_LDLIBS    := -llog
 
-ifeq ($(APP_ABI),armeabi-v7a)
+ifeq ($(APP_ABI),armeabi-v7a))
   LOCAL_LDFLAGS += -Wl,--long-plt
 endif
 
