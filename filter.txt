@@ -18,6 +18,13 @@
 !^Lcom/google/
 !^Lcom/facebook/
 !^Lorg/apache/
+!^Lorg/greenrobot/eventbus
+!^Lorg/intellij/
+# org.intellij.lang.annotations
+!^Lorg/jetbrains/
+!^Lpl/droidsonroids/gif
+
+
 
 !^Landroid/
 !^Landroidx/
@@ -29,19 +36,29 @@
 !^Lbutterknife/
 !^Lio/flutter/
 !^Lio/reactive
+!^Lio/reactivex
 !^Lio/realm/
 !^Lrx/
-!^Ltv/danmaku/
+!^Ltv/danmaku/ijk
 
-
-okhttp3
-okhttp
-okio
-retrofit
-retrofit2
+!okhttp3
+!okhttp
+!okio
+!retrofit
+!retrofit2
 
 # bugly, qq sdk, wechat sdk
 !^Lcom/tencent/
+!^Lcom/alipay/
+!^Lcom/aliyun/
+# com/alibaba/fastjson
+!^Lcom/alibaba/
+
+# com.king.zxing.camera
+!zxing
+
+# com.squareup.javapoet
+!squareup
 
 !^_m_j
 
