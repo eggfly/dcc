@@ -682,5 +682,4 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error("Compile %s failed!" % infile, exc_info=True)
     finally:
-        pass
-        # clean_temp_files()
+        clean_temp_files()
