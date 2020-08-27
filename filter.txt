@@ -17,6 +17,7 @@
 
 #Java_com_xiaomi_mipush_sdk
 !^Lcom/xiaomi/mipush
+!^Lcom/xiaomi/push
 #Java_com_xiaomi_channel_commonutils_logger_b_a__ILjava_lang_String_2
 !^Lcom/xiaomi/channel
 !^Lcom/google/
