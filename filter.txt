@@ -15,6 +15,8 @@
 # ignore attachBaseContext
 # !attachBaseContext
 
+#Java_com_xiaomi_mipush_sdk
+!^Lcom/xiaomi/mipush
 !^Lcom/google/
 !^Lcom/facebook/
 !^Lorg/apache/
