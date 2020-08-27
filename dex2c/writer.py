@@ -252,7 +252,7 @@ class Writer(object):
             self.write_undefine_ex_handle(ins)
             self.write('}\n')
         else:
-            self.write('v%s = %r;\n' % (self.ra(val), cst))
+            self.write('v%s = (%s) %r;\n' % (self.ra(val), get_native_type(atype), cst))
 
     def visit_constant(self, cst):
         self.write('%s' % cst)
