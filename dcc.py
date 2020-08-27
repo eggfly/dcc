@@ -413,6 +413,7 @@ def compile_dex(vm, filter_cfg):
 def compile_all_dex(apk_file, project_dir, filter_cfg):
     logger.info("--> start reading all dex from " + apk_file)
     compiled_methods = set()
+    duplicated_methods = set()
     ret = androconf.is_android(apk_file)
     if ret == 'APK':
         apk_obj = apk.APK(apk_file)
@@ -424,28 +425,45 @@ def compile_all_dex(apk_file, project_dir, filter_cfg):
             logger.info("--> %s start create dvm.DalvikVMFormat" % dex_file)
             # noinspection PyTypeChecker
             vm = dvm.DalvikVMFormat(dex)
-            compile_dex_and_write_code(classes_prefix, compiled_methods, filter_cfg, project_dir, vm)
+            compile_dex_and_write_code(classes_prefix, compiled_methods, duplicated_methods, filter_cfg, project_dir,
+                                       vm)
     else:
         raise Exception("unsupported file %s" % apk_file)
     # save compiled_methods.txt
     logger.info("all cpp methods count=%d, save compiled_methods.txt: %s" % (len(compiled_methods), project_dir))
     with open(os.path.join(project_dir, 'compiled_methods.txt'), 'w') as fp:
         fp.write('\n'.join(list(map(''.join, compiled_methods))))
+    # remove duplicated methods marks
+    compiled_methods = compiled_methods - duplicated_methods
     return compiled_methods
 
 
-def compile_dex_and_write_code(classes_prefix, compiled_methods, filter_cfg, project_dir, vm):
+def compile_dex_and_write_code(classes_prefix, compiled_methods, duplicated_methods, filter_cfg, project_dir, vm):
     logger.info("  --> %s.dex start compile_dex: %s" % (classes_prefix, str(vm)))
     codes, errors, total = compile_dex(vm, filter_cfg)
-    compiled_methods.update(codes.keys())
     if errors:
         logger.warning('================================')
         logger.warning('\n'.join(errors))
+        logger.warning('================================')
+    methods = codes.keys()
+    intersection = compiled_methods & methods
+    compiled_methods.update(methods)
+    duplicated_methods.update(intersection)
+    entries_to_remove(intersection, codes)
+    if intersection:
+        logger.warning('================================')
+        logger.warning("duplicated methods, ignore compile to native code: " + str(intersection))
         logger.warning('================================')
     # write_methods
     logger.info(
         "  --> %s.dex start write to cpp files, compiled/total=%d/%d" % (classes_prefix, len(codes), total))
     write_compiled_methods(project_dir, classes_prefix, codes)
+
+
+def entries_to_remove(entries, the_dict):
+    for key in entries:
+        if key in the_dict:
+            del the_dict[key]
 
 
 def is_apk(name):
