@@ -17,18 +17,17 @@ from androguard.core import androconf
 from androguard.core.analysis import analysis
 from androguard.core.androconf import show_logging
 from androguard.core.bytecodes import apk, dvm
-from androguard.util import read
 from dex2c.compiler import Dex2C
 from dex2c.util import MangleForJni, JniLongName
 from dex2c.util import get_method_triple, get_access_method, is_synthetic_method, is_native_method
 
 time_str = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
-APKTOOL = 'tools/apktool.jar'
+APKTOOL = 'tools/apktool-2.4.2-d3f9d5-SNAPSHOT-small.jar'
 ManifestEditor = 'tools/ManifestEditor-1.0.2.jar'
 SIGN_JAR = 'tools/signapk.jar'
 NDK_BUILD = 'ndk-build'
-LIBNATIVECODE = 'libnc.so'
+LIB_NATIVE_CODE = 'libnc.so'
 
 show_logging(level=logging.INFO)
 logger = logging.getLogger('dcc')
@@ -259,7 +258,7 @@ def copy_compiled_libs(project_dir, decompiled_dir):
         if not os.path.exists(src):
             raise Exception("ABI %s is not supported!" % abi)
 
-        libnc = os.path.join(src, LIBNATIVECODE)
+        libnc = os.path.join(src, LIB_NATIVE_CODE)
         shutil.copy(libnc, dst)
 
 
