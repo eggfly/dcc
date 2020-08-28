@@ -22,6 +22,8 @@
 !^Lcom/xiaomi/channel/commonutils
 !^Lcom/xiaomi/xmpush/
 
+# alipay utdid sdk
+!^Lcom/ta/utdid
 
 !^Lcom/google/
 !^Lcom/facebook/
