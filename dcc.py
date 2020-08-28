@@ -506,6 +506,7 @@ def dcc_main(apk_file, filtercfg, outapk, do_compile=True, project_dir=None, sou
 
     parse_apk = APK(apk_file)
     package_name = parse_apk.packagename
+    source_archive = "project-%s-%s.zip" % (package_name, time_str)
 
     # initialize project dir structure
     if project_dir:
