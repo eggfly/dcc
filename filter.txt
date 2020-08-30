@@ -64,6 +64,10 @@
 # com/alibaba/fastjson
 !^Lcom/alibaba/
 
+# https://x5.tencent.com/tbs/sdk.html
+!^LMTT
+# !^com/tencent/smtt/
+
 # com.king.zxing.camera
 !zxing
 
